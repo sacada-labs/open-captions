@@ -58,9 +58,6 @@ export class SubtitleOverlay {
       this.updateDisplay();
     });
 
-    // Setup keyboard shortcuts
-    this.setupKeyboardShortcuts();
-
     // Initial display update
     this.updateDisplay();
 
@@ -197,31 +194,13 @@ export class SubtitleOverlay {
     this.updateDisplay();
   }
 
-  getOffset(): number {
-    return this.timeOffset;
+  setOffset(offset: number): void {
+    this.timeOffset = offset;
+    this.updateDisplay();
   }
 
-  private setupKeyboardShortcuts(): void {
-    document.addEventListener('keydown', (event: KeyboardEvent) => {
-      // Only handle shortcuts when video is playing
-      if (!this.platform?.videoPlayer || this.platform.videoPlayer.paused) return;
-
-      // Ctrl/Command + Shift + Right Arrow: Increase offset by 1 second
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'ArrowRight') {
-        this.increaseOffset();
-        event.preventDefault();
-      }
-      // Ctrl/Command + Shift + Left Arrow: Decrease offset by 1 second
-      else if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'ArrowLeft') {
-        this.decreaseOffset();
-        event.preventDefault();
-      }
-      // Ctrl/Command + Shift + R: Reset offset
-      else if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'r') {
-        this.resetOffset();
-        event.preventDefault();
-      }
-    });
+  getOffset(): number {
+    return this.timeOffset;
   }
 
   private setupMessageListener(): void {
@@ -229,6 +208,10 @@ export class SubtitleOverlay {
       switch (request.action) {
         case 'getOffset':
           sendResponse({ offset: this.timeOffset });
+          return false; // Response sent synchronously
+        case 'setOffset':
+          this.setOffset(request.offset);
+          sendResponse({ success: true, offset: this.timeOffset });
           return false; // Response sent synchronously
         case 'increaseOffset':
           this.increaseOffset();
