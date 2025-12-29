@@ -6,6 +6,8 @@ export class SubtitleOverlay {
   private currentSubtitles: Subtitle[] = [];
   private platform: StreamingPlatformInstance | null = null;
   private timeOffset: number = 0; // Time offset in seconds
+  private fontSize: number = 28; // Font size in pixels
+  private fontColor: string = '#FFFFFF'; // Font color
 
   constructor() {
     this.initialize();
@@ -194,7 +196,7 @@ export class SubtitleOverlay {
             : ''
         }
       </div>
-      ${currentSubtitle ? `<div class="subtitle-text">${currentSubtitle.text}</div>` : ''}
+      ${currentSubtitle ? `<div class="subtitle-text" style="font-size: ${this.fontSize}px; color: ${this.fontColor};">${currentSubtitle.text}</div>` : ''}
     `;
   }
 
@@ -256,6 +258,23 @@ export class SubtitleOverlay {
 
   getOffset(): number {
     return this.timeOffset;
+  }
+
+  setAppearance(fontSize: number, fontColor: string): void {
+    console.log('[OpenCaptions] setAppearance called:', { fontSize, fontColor });
+    this.fontSize = fontSize;
+    this.fontColor = fontColor;
+    this.applyAppearance();
+    this.updateDisplay();
+    console.log('[OpenCaptions] Appearance updated:', { fontSize: this.fontSize, fontColor: this.fontColor });
+  }
+
+  private applyAppearance(): void {
+    if (!this.overlay) return;
+    
+    // Apply font color to the overlay
+    this.overlay.style.setProperty('--subtitle-font-size', `${this.fontSize}px`);
+    this.overlay.style.setProperty('--subtitle-font-color', this.fontColor);
   }
 
   private setupMessageListener(): void {

@@ -15,18 +15,35 @@ let offsetValue: HTMLSpanElement;
 let offsetHint: HTMLParagraphElement;
 let resetOffsetBtn: HTMLButtonElement;
 
+// Appearance elements
+let fontSizeValue: HTMLSpanElement;
+let fontSizeDecrease: HTMLButtonElement;
+let fontSizeIncrease: HTMLButtonElement;
+let colorPresets: NodeListOf<HTMLButtonElement>;
+let customColorPicker: HTMLInputElement;
+let subtitlePreview: HTMLDivElement;
+
 // State
 let currentOffset = 0;
 let isConnected = false;
+let currentFontSize = 28;
+let currentFontColor = '#FFFFFF';
 
 // Storage keys
 const STORAGE_KEY_SUBTITLE = 'loadedSubtitle';
+const STORAGE_KEY_APPEARANCE = 'subtitleAppearance';
 
 // Subtitle data interface
 interface SubtitleData {
   fileName: string;
   count: number;
   content: string;
+}
+
+// Appearance settings interface
+interface AppearanceSettings {
+  fontSize: number;
+  fontColor: string;
 }
 
 /**
@@ -38,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkConnection();
   getCurrentOffset();
   loadSavedSubtitle();
+  loadSavedAppearance();
 });
 
 /**
@@ -54,6 +72,14 @@ function initializeElements(): void {
   offsetValue = document.getElementById('offsetValue') as HTMLSpanElement;
   offsetHint = document.getElementById('offsetHint') as HTMLParagraphElement;
   resetOffsetBtn = document.getElementById('resetOffset') as HTMLButtonElement;
+  
+  // Appearance elements
+  fontSizeValue = document.getElementById('fontSizeValue') as HTMLSpanElement;
+  fontSizeDecrease = document.getElementById('fontSizeDecrease') as HTMLButtonElement;
+  fontSizeIncrease = document.getElementById('fontSizeIncrease') as HTMLButtonElement;
+  colorPresets = document.querySelectorAll<HTMLButtonElement>('.color-preset');
+  customColorPicker = document.getElementById('customColor') as HTMLInputElement;
+  subtitlePreview = document.getElementById('subtitlePreview') as HTMLDivElement;
 }
 
 /**
@@ -81,6 +107,24 @@ function setupEventListeners(): void {
   
   // Reset button
   resetOffsetBtn.addEventListener('click', resetOffset);
+  
+  // Appearance controls
+  fontSizeDecrease.addEventListener('click', () => changeFontSize(-2));
+  fontSizeIncrease.addEventListener('click', () => changeFontSize(2));
+  
+  colorPresets.forEach(preset => {
+    preset.addEventListener('click', () => {
+      const color = preset.dataset.color || '#FFFFFF';
+      setFontColor(color);
+      updateColorPresetSelection(color);
+    });
+  });
+  
+  customColorPicker.addEventListener('input', (e) => {
+    const color = (e.target as HTMLInputElement).value;
+    setFontColor(color);
+    updateColorPresetSelection(color);
+  });
   
   // Listen for offset updates from content script
   chrome.runtime.onMessage.addListener((message) => {
@@ -367,6 +411,96 @@ function loadSavedSubtitle(): void {
  */
 function clearSavedSubtitle(): void {
   chrome.storage.local.remove(STORAGE_KEY_SUBTITLE);
+}
+
+/**
+ * Load saved appearance settings from Chrome storage
+ */
+function loadSavedAppearance(): void {
+  chrome.storage.local.get([STORAGE_KEY_APPEARANCE], (result) => {
+    const settings = result[STORAGE_KEY_APPEARANCE] as AppearanceSettings | undefined;
+    if (settings) {
+      currentFontSize = settings.fontSize;
+      currentFontColor = settings.fontColor;
+    }
+    // Apply the settings to UI
+    updateAppearanceUI();
+    // Send to content script
+    sendAppearanceToContentScript();
+  });
+}
+
+/**
+ * Save appearance settings to Chrome storage
+ */
+function saveAppearance(): void {
+  const settings: AppearanceSettings = {
+    fontSize: currentFontSize,
+    fontColor: currentFontColor
+  };
+  chrome.storage.local.set({ [STORAGE_KEY_APPEARANCE]: settings });
+}
+
+/**
+ * Update the appearance UI elements
+ */
+function updateAppearanceUI(): void {
+  fontSizeValue.textContent = `${currentFontSize}px`;
+  subtitlePreview.style.fontSize = `${currentFontSize}px`;
+  subtitlePreview.style.color = currentFontColor;
+  customColorPicker.value = currentFontColor;
+  updateColorPresetSelection(currentFontColor);
+}
+
+/**
+ * Change font size by delta
+ */
+function changeFontSize(delta: number): void {
+  const newSize = Math.max(16, Math.min(48, currentFontSize + delta));
+  if (newSize !== currentFontSize) {
+    currentFontSize = newSize;
+    updateAppearanceUI();
+    saveAppearance();
+    sendAppearanceToContentScript();
+  }
+}
+
+/**
+ * Set font color
+ */
+function setFontColor(color: string): void {
+  currentFontColor = color;
+  updateAppearanceUI();
+  saveAppearance();
+  sendAppearanceToContentScript();
+}
+
+/**
+ * Update color preset selection UI
+ */
+function updateColorPresetSelection(selectedColor: string): void {
+  colorPresets.forEach(preset => {
+    const presetColor = preset.dataset.color || '';
+    if (presetColor.toUpperCase() === selectedColor.toUpperCase()) {
+      preset.classList.add('active');
+    } else {
+      preset.classList.remove('active');
+    }
+  });
+}
+
+/**
+ * Send appearance settings to content script
+ */
+function sendAppearanceToContentScript(): void {
+  console.log('[OpenCaptions Popup] Sending appearance:', { fontSize: currentFontSize, fontColor: currentFontColor });
+  sendMessage({
+    action: 'setAppearance',
+    fontSize: currentFontSize,
+    fontColor: currentFontColor
+  }, (response) => {
+    console.log('[OpenCaptions Popup] Appearance response:', response);
+  });
 }
 
 /**
