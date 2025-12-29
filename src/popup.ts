@@ -14,12 +14,20 @@ let clearFileBtn: HTMLButtonElement;
 let offsetValue: HTMLSpanElement;
 let offsetHint: HTMLParagraphElement;
 let resetOffsetBtn: HTMLButtonElement;
-let shortcutsToggle: HTMLButtonElement;
-let shortcutsContent: HTMLDivElement;
 
 // State
 let currentOffset = 0;
 let isConnected = false;
+
+// Storage keys
+const STORAGE_KEY_SUBTITLE = 'loadedSubtitle';
+
+// Subtitle data interface
+interface SubtitleData {
+  fileName: string;
+  count: number;
+  content: string;
+}
 
 /**
  * Initialize the popup
@@ -29,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   checkConnection();
   getCurrentOffset();
+  loadSavedSubtitle();
 });
 
 /**
@@ -45,8 +54,6 @@ function initializeElements(): void {
   offsetValue = document.getElementById('offsetValue') as HTMLSpanElement;
   offsetHint = document.getElementById('offsetHint') as HTMLParagraphElement;
   resetOffsetBtn = document.getElementById('resetOffset') as HTMLButtonElement;
-  shortcutsToggle = document.getElementById('shortcutsToggle') as HTMLButtonElement;
-  shortcutsContent = document.getElementById('shortcutsContent') as HTMLDivElement;
 }
 
 /**
@@ -74,9 +81,6 @@ function setupEventListeners(): void {
   
   // Reset button
   resetOffsetBtn.addEventListener('click', resetOffset);
-  
-  // Shortcuts toggle
-  shortcutsToggle.addEventListener('click', toggleShortcuts);
   
   // Listen for offset updates from content script
   chrome.runtime.onMessage.addListener((message) => {
@@ -148,7 +152,7 @@ function setDisconnected(statusText: HTMLSpanElement, text: string): void {
 function getCurrentOffset(): void {
   sendMessage({ action: 'getOffset' }, (response) => {
     if (response?.offset !== undefined) {
-      updateOffsetDisplay(response.offset);
+      updateOffsetDisplay(response.offset as number);
     }
   });
 }
@@ -199,7 +203,7 @@ function adjustOffset(delta: number): void {
   
   sendMessage({ action: 'setOffset', offset: roundedOffset }, (response) => {
     if (response?.success || response?.offset !== undefined) {
-      updateOffsetDisplay(response.offset ?? roundedOffset);
+      updateOffsetDisplay((response.offset as number) ?? roundedOffset);
       showFeedback(delta > 0 ? 'Delayed' : 'Advanced');
     }
   });
@@ -287,6 +291,12 @@ function processFile(file: File): void {
     sendMessage({ action: 'loadSubtitles', subtitles: content }, (response) => {
       if (response?.success) {
         showFileLoaded(file.name, count);
+        // Save to storage for persistence
+        saveSubtitle({
+          fileName: file.name,
+          count: count,
+          content: content
+        });
         showToast('Subtitles loaded!', 'success');
       } else {
         showToast('Failed to load subtitles', 'error');
@@ -330,12 +340,45 @@ function showFileLoaded(name: string, count: number): void {
 }
 
 /**
+ * Save subtitle data to Chrome storage
+ */
+function saveSubtitle(data: SubtitleData): void {
+  chrome.storage.local.set({ [STORAGE_KEY_SUBTITLE]: data });
+}
+
+/**
+ * Load saved subtitle from Chrome storage
+ */
+function loadSavedSubtitle(): void {
+  chrome.storage.local.get([STORAGE_KEY_SUBTITLE], (result) => {
+    const data = result[STORAGE_KEY_SUBTITLE] as SubtitleData | undefined;
+    if (data && data.content) {
+      // Show the loaded file UI
+      showFileLoaded(data.fileName, data.count);
+      
+      // Re-send subtitles to content script (in case page was refreshed)
+      sendMessage({ action: 'loadSubtitles', subtitles: data.content });
+    }
+  });
+}
+
+/**
+ * Clear saved subtitle from Chrome storage
+ */
+function clearSavedSubtitle(): void {
+  chrome.storage.local.remove(STORAGE_KEY_SUBTITLE);
+}
+
+/**
  * Clear loaded subtitles
  */
 function clearSubtitles(): void {
   fileLoaded.classList.remove('visible');
   dropzone.classList.remove('hidden');
   fileInput.value = '';
+  
+  // Clear from storage
+  clearSavedSubtitle();
   
   // Clear subtitles in content script
   sendMessage({ action: 'loadSubtitles', subtitles: '' }, () => {

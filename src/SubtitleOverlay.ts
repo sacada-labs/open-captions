@@ -65,26 +65,70 @@ export class SubtitleOverlay {
   }
 
   private parseTime(timeStr: string): number {
-    // Parse time in format HH:MM:SS,mmm
-    const [time, milliseconds] = timeStr.split(',');
-    const [hours, minutes, seconds] = time.split(':').map(Number);
-    return hours * 3600 + minutes * 60 + seconds + Number(milliseconds) / 1000;
+    // Parse time in format HH:MM:SS,mmm or HH:MM:SS.mmm
+    // Also handle position metadata that may follow (e.g., "00:01:23,456 X1:100")
+    const cleanTime = timeStr.split(' ')[0]; // Remove any position metadata
+    
+    // Handle both comma and period as millisecond separator
+    const [time, milliseconds] = cleanTime.includes(',') 
+      ? cleanTime.split(',') 
+      : cleanTime.split('.');
+    
+    const timeParts = time.split(':').map(Number);
+    
+    // Handle both HH:MM:SS and MM:SS formats
+    let hours = 0, minutes = 0, seconds = 0;
+    if (timeParts.length === 3) {
+      [hours, minutes, seconds] = timeParts;
+    } else if (timeParts.length === 2) {
+      [minutes, seconds] = timeParts;
+    }
+    
+    const ms = milliseconds ? Number(milliseconds) : 0;
+    return hours * 3600 + minutes * 60 + seconds + ms / 1000;
   }
 
   private parseSubtitles(subtitleText: string): Subtitle[] {
     const subtitles: Subtitle[] = [];
-    const blocks = subtitleText.split('\n\n');
+    
+    // Normalize line endings (handle Windows \r\n and old Mac \r)
+    const normalizedText = subtitleText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    
+    // Split by double newlines (empty lines between subtitle blocks)
+    const blocks = normalizedText.split(/\n\n+/);
 
     for (const block of blocks) {
-      const lines = block.split('\n');
-      if (lines.length < 3) continue;
+      const lines = block.trim().split('\n');
+      if (lines.length < 2) continue;
 
-      const index = parseInt(lines[0]);
-      const timeParts = lines[1].split(' --> ');
+      // Find the line with the timestamp (contains ' --> ')
+      let timeLineIndex = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes(' --> ')) {
+          timeLineIndex = i;
+          break;
+        }
+      }
+      
+      if (timeLineIndex === -1) continue;
+      
+      const timeParts = lines[timeLineIndex].split(' --> ');
       if (timeParts.length !== 2) continue;
       
+      // Parse index (line before timestamp, if it exists and is a number)
+      let index = 0;
+      if (timeLineIndex > 0) {
+        const possibleIndex = parseInt(lines[timeLineIndex - 1].trim());
+        if (!isNaN(possibleIndex)) {
+          index = possibleIndex;
+        }
+      }
+      
       const [startTime, endTime] = timeParts.map((t) => t.trim());
-      const text = lines.slice(2).join('\n');
+      // Text is everything after the timestamp line
+      const text = lines.slice(timeLineIndex + 1).join('\n').trim();
+      
+      if (!text) continue; // Skip entries with no text
 
       subtitles.push({
         index,
@@ -94,6 +138,7 @@ export class SubtitleOverlay {
       });
     }
 
+    console.log(`Parsed ${subtitles.length} subtitles`);
     return subtitles;
   }
 
@@ -128,6 +173,14 @@ export class SubtitleOverlay {
           currentTime >= sub.startTime + this.timeOffset &&
           currentTime < sub.endTime + this.timeOffset
       );
+      
+      // Debug: Log every 5 seconds to show subtitle matching status
+      if (Math.floor(currentTime) % 5 === 0 && Math.floor(currentTime * 10) % 10 === 0) {
+        console.log(`[OpenCaptions] Time: ${currentTime.toFixed(2)}s, Subtitles loaded: ${this.currentSubtitles.length}, Current subtitle: ${currentSubtitle ? 'YES' : 'NO'}`);
+        if (this.currentSubtitles.length > 0 && this.currentSubtitles.length <= 5) {
+          console.log('[OpenCaptions] First few subtitles:', this.currentSubtitles.slice(0, 3));
+        }
+      }
     }
 
     this.overlay.innerHTML = `
@@ -151,19 +204,21 @@ export class SubtitleOverlay {
     const remainingSeconds = Math.floor(seconds % 60);
     const milliseconds = Math.floor((seconds % 1) * 1000);
 
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds
-        .toString()
-        .padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
-    } else {
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds
-        .toString()
-        .padStart(3, '0')}`;
-    }
+    // Always show HH:MM:SS.mmm format
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds
+      .toString()
+      .padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
   }
 
   loadSubtitles(subtitleText: string): void {
+    console.log('[OpenCaptions] Loading subtitles, text length:', subtitleText.length);
     this.currentSubtitles = this.parseSubtitles(subtitleText);
+
+    console.log('[OpenCaptions] Parsed subtitles count:', this.currentSubtitles.length);
+    if (this.currentSubtitles.length > 0) {
+      console.log('[OpenCaptions] First subtitle:', this.currentSubtitles[0]);
+      console.log('[OpenCaptions] Last subtitle:', this.currentSubtitles[this.currentSubtitles.length - 1]);
+    }
     // Update display after loading subtitles
     this.updateDisplay();
   }
